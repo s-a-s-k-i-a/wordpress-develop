@@ -60,21 +60,14 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_adds_extra_headers_to_existing_cache() {
-		wp_clean_plugins_cache( false );
-
 		$before = get_plugins();
-		$this->assertNotEmpty( $before );
-		$this->assertArrayNotHasKey( 'X-WP-Test-Extra', reset( $before ) );
+		$this->assertNotEmpty( $before, 'The initial scan should find plugins.' );
+		$this->assertArrayNotHasKey( 'X-WP-Test-Extra', reset( $before ), 'The initial scan should not contain the unregistered extra header.' );
 
-		$callback = array( $this, 'filter_x_wp_test_extra_header' );
-		add_filter( 'extra_plugin_headers', $callback );
+		add_filter( 'extra_plugin_headers', array( $this, 'filter_x_wp_test_extra_header' ) );
 
-		try {
-			$after = get_plugins();
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', reset( $after ) );
-		} finally {
-			remove_filter( 'extra_plugin_headers', $callback );
-		}
+		$after = get_plugins();
+		$this->assertArrayHasKey( 'X-WP-Test-Extra', reset( $after ), 'The cached list should gain the late extra header.' );
 	}
 
 	/**
@@ -82,7 +75,6 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_keeps_cached_fields_when_adding_extra_headers() {
-		wp_clean_plugins_cache( false );
 		get_plugins();
 
 		$cache = wp_cache_get( 'plugins', 'plugins' );
@@ -92,16 +84,11 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 
 		wp_cache_set( 'plugins', $cache, 'plugins' );
 
-		$callback = array( $this, 'filter_x_wp_test_extra_header' );
-		add_filter( 'extra_plugin_headers', $callback );
+		add_filter( 'extra_plugin_headers', array( $this, 'filter_x_wp_test_extra_header' ) );
 
-		try {
-			$after = get_plugins();
-			$this->assertSame( 'cached-version', $after[ $file ]['Version'] );
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', $after[ $file ] );
-		} finally {
-			remove_filter( 'extra_plugin_headers', $callback );
-		}
+		$after = get_plugins();
+		$this->assertSame( 'cached-version', $after[ $file ]['Version'], 'Adding an extra header should preserve the cached version.' );
+		$this->assertArrayHasKey( 'X-WP-Test-Extra', $after[ $file ], 'The plugin with a cached version should gain the extra header.' );
 	}
 
 	/**
@@ -109,24 +96,19 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_rereads_extra_header_values_after_cache_was_warm() {
-		$plugin   = $this->_create_plugin( "<?php\n/*\nPlugin Name: Extra Header Cache Test\nX-WP-Test-Extra: from-file\n*/" );
-		$callback = array( $this, 'filter_x_wp_test_extra_header' );
+		$plugin = $this->_create_plugin( "<?php\n/*\nPlugin Name: Extra Header Cache Test\nX-WP-Test-Extra: from-file\n*/" );
 
 		try {
-			wp_clean_plugins_cache( false );
-
 			$before = get_plugins();
-			$this->assertArrayHasKey( $plugin[0], $before );
-			$this->assertArrayNotHasKey( 'X-WP-Test-Extra', $before[ $plugin[0] ] );
+			$this->assertArrayHasKey( $plugin[0], $before, 'The initial scan should include the temporary plugin.' );
+			$this->assertArrayNotHasKey( 'X-WP-Test-Extra', $before[ $plugin[0] ], 'The temporary plugin should not have the unregistered extra header.' );
 
-			add_filter( 'extra_plugin_headers', $callback );
+			add_filter( 'extra_plugin_headers', array( $this, 'filter_x_wp_test_extra_header' ) );
 
 			$after = get_plugins();
-			$this->assertSame( 'from-file', $after[ $plugin[0] ]['X-WP-Test-Extra'] );
+			$this->assertSame( 'from-file', $after[ $plugin[0] ]['X-WP-Test-Extra'], 'The late extra header should contain the value from the plugin file.' );
 		} finally {
-			remove_filter( 'extra_plugin_headers', $callback );
 			unlink( $plugin[1] );
-			wp_clean_plugins_cache( false );
 		}
 	}
 
@@ -135,14 +117,13 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_folder_argument_does_not_scan_other_plugins() {
-		wp_clean_plugins_cache( false );
 		get_plugins( '/custom-internationalized-plugin' );
 
 		$cache = wp_cache_get( 'plugins', 'plugins' );
-		$this->assertArrayNotHasKey( '', $cache );
-		$this->assertArrayHasKey( '/custom-internationalized-plugin', $cache );
-		$this->assertArrayHasKey( 'custom-internationalized-plugin.php', $cache['/custom-internationalized-plugin'] );
-		$this->assertArrayNotHasKey( 'hello.php', $cache['/custom-internationalized-plugin'] );
+		$this->assertArrayNotHasKey( '', $cache, 'A folder scan should not populate the full-list cache.' );
+		$this->assertArrayHasKey( '/custom-internationalized-plugin', $cache, 'A folder scan should populate its own cache key.' );
+		$this->assertArrayHasKey( 'custom-internationalized-plugin.php', $cache['/custom-internationalized-plugin'], 'The folder cache should include its plugin file.' );
+		$this->assertArrayNotHasKey( 'hello.php', $cache['/custom-internationalized-plugin'], 'The folder cache should not include a root-level plugin.' );
 	}
 
 	/**
@@ -150,13 +131,12 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_fills_remaining_plugins_after_a_folder_call() {
-		wp_clean_plugins_cache( false );
 		get_plugins( '/custom-internationalized-plugin' );
 		get_plugins();
 
 		$cache = wp_cache_get( 'plugins', 'plugins' );
-		$this->assertArrayHasKey( 'hello.php', $cache[''] );
-		$this->assertArrayHasKey( 'custom-internationalized-plugin/custom-internationalized-plugin.php', $cache[''] );
+		$this->assertArrayHasKey( 'hello.php', $cache[''], 'The full scan after a folder scan should include root-level plugins.' );
+		$this->assertArrayHasKey( 'custom-internationalized-plugin/custom-internationalized-plugin.php', $cache[''], 'The full scan should retain the plugin from the cached folder.' );
 	}
 
 	/**
@@ -164,21 +144,14 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_folder_cache_adds_extra_headers() {
-		wp_clean_plugins_cache( false );
-
 		$before = get_plugins( '/custom-internationalized-plugin' );
-		$this->assertArrayHasKey( 'custom-internationalized-plugin.php', $before );
-		$this->assertArrayNotHasKey( 'X-WP-Test-Extra', $before['custom-internationalized-plugin.php'] );
+		$this->assertArrayHasKey( 'custom-internationalized-plugin.php', $before, 'The initial folder scan should include its plugin file.' );
+		$this->assertArrayNotHasKey( 'X-WP-Test-Extra', $before['custom-internationalized-plugin.php'], 'The initial folder scan should not contain the unregistered extra header.' );
 
-		$callback = array( $this, 'filter_x_wp_test_extra_header' );
-		add_filter( 'extra_plugin_headers', $callback );
+		add_filter( 'extra_plugin_headers', array( $this, 'filter_x_wp_test_extra_header' ) );
 
-		try {
-			$after = get_plugins( '/custom-internationalized-plugin' );
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', $after['custom-internationalized-plugin.php'] );
-		} finally {
-			remove_filter( 'extra_plugin_headers', $callback );
-		}
+		$after = get_plugins( '/custom-internationalized-plugin' );
+		$this->assertArrayHasKey( 'X-WP-Test-Extra', $after['custom-internationalized-plugin.php'], 'The cached folder list should gain the late extra header.' );
 	}
 
 	/**
@@ -186,14 +159,12 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_caches_a_missing_folder() {
-		wp_clean_plugins_cache( false );
-
 		$missing = get_plugins( '/this-plugin-folder-does-not-exist' );
-		$this->assertSame( array(), $missing );
+		$this->assertSame( array(), $missing, 'A missing folder should return an empty list.' );
 
 		$cache = wp_cache_get( 'plugins', 'plugins' );
-		$this->assertArrayHasKey( '/this-plugin-folder-does-not-exist', $cache );
-		$this->assertSame( array(), $cache['/this-plugin-folder-does-not-exist'] );
+		$this->assertArrayHasKey( '/this-plugin-folder-does-not-exist', $cache, 'A missing folder should have its own cache key.' );
+		$this->assertSame( array(), $cache['/this-plugin-folder-does-not-exist'], 'The missing folder cache should contain an empty list.' );
 	}
 
 	/**
@@ -203,22 +174,16 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_merges_extra_headers_into_each_cached_folder() {
-		wp_clean_plugins_cache( false );
 		get_plugins();
 		get_plugins( '/custom-internationalized-plugin' );
 
-		$callback = array( $this, 'filter_x_wp_test_extra_header' );
-		add_filter( 'extra_plugin_headers', $callback );
+		add_filter( 'extra_plugin_headers', array( $this, 'filter_x_wp_test_extra_header' ) );
 
-		try {
-			$all = get_plugins();
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', $all['custom-internationalized-plugin/custom-internationalized-plugin.php'] );
+		$all = get_plugins();
+		$this->assertArrayHasKey( 'X-WP-Test-Extra', $all['custom-internationalized-plugin/custom-internationalized-plugin.php'], 'The cached full list should gain the late extra header.' );
 
-			$folder = get_plugins( '/custom-internationalized-plugin' );
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', $folder['custom-internationalized-plugin.php'] );
-		} finally {
-			remove_filter( 'extra_plugin_headers', $callback );
-		}
+		$folder = get_plugins( '/custom-internationalized-plugin' );
+		$this->assertArrayHasKey( 'X-WP-Test-Extra', $folder['custom-internationalized-plugin.php'], 'The cached folder list should gain the header after the full list is read.' );
 	}
 
 	/**
@@ -240,29 +205,26 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 		file_put_contents( $sub_file, "<?php\n/*\nPlugin Name: Nested Deep\n*/" );
 
 		try {
-			wp_clean_plugins_cache( false );
-
 			$all_first = get_plugins();
-			$this->assertArrayNotHasKey( 'wp-test-nested-plugin/sub/nested.php', $all_first );
+			$this->assertArrayNotHasKey( 'wp-test-nested-plugin/sub/nested.php', $all_first, 'A full scan should not include a plugin two directories deep.' );
 
 			$folder = get_plugins( '/wp-test-nested-plugin' );
-			$this->assertArrayHasKey( 'wp-test-nested-plugin.php', $folder );
-			$this->assertArrayHasKey( 'sub/nested.php', $folder );
+			$this->assertArrayHasKey( 'wp-test-nested-plugin.php', $folder, 'A folder scan after a full scan should include its root plugin.' );
+			$this->assertArrayHasKey( 'sub/nested.php', $folder, 'A folder scan after a full scan should include its nested plugin.' );
 
 			wp_clean_plugins_cache( false );
 
 			$folder_first = get_plugins( '/wp-test-nested-plugin' );
-			$this->assertArrayHasKey( 'sub/nested.php', $folder_first );
+			$this->assertArrayHasKey( 'sub/nested.php', $folder_first, 'A cold folder scan should include its nested plugin.' );
 
 			$all_second = get_plugins();
-			$this->assertArrayHasKey( 'wp-test-nested-plugin/wp-test-nested-plugin.php', $all_second );
-			$this->assertArrayNotHasKey( 'wp-test-nested-plugin/sub/nested.php', $all_second );
+			$this->assertArrayHasKey( 'wp-test-nested-plugin/wp-test-nested-plugin.php', $all_second, 'A full scan after a folder scan should include the root plugin.' );
+			$this->assertArrayNotHasKey( 'wp-test-nested-plugin/sub/nested.php', $all_second, 'A full scan should not inherit nested plugins from the folder cache.' );
 		} finally {
 			unlink( $sub_file );
 			unlink( $root_file );
 			rmdir( $dir . '/sub' );
 			rmdir( $dir );
-			wp_clean_plugins_cache( false );
 		}
 	}
 
@@ -273,23 +235,19 @@ class Tests_Admin_IncludesPlugin extends WP_UnitTestCase {
 	 * @covers ::get_plugins
 	 */
 	public function test_get_plugins_merges_extra_headers_into_seeded_rows() {
-		$early    = $this->_create_plugin( "<?php\n/*\nPlugin Name: 000 Extra Sort First\n*/", 'extra-sort-first.php' );
-		$callback = array( $this, 'filter_x_wp_test_extra_header' );
+		$early = $this->_create_plugin( "<?php\n/*\nPlugin Name: 000 Extra Sort First\n*/", 'extra-sort-first.php' );
 
 		try {
-			wp_clean_plugins_cache( false );
 			get_plugins( '/custom-internationalized-plugin' );
 
-			add_filter( 'extra_plugin_headers', $callback );
+			add_filter( 'extra_plugin_headers', array( $this, 'filter_x_wp_test_extra_header' ) );
 
 			$all = get_plugins();
-			$this->assertSame( 'extra-sort-first.php', array_key_first( $all ) );
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', $all['extra-sort-first.php'] );
-			$this->assertArrayHasKey( 'X-WP-Test-Extra', $all['custom-internationalized-plugin/custom-internationalized-plugin.php'] );
+			$this->assertSame( 'extra-sort-first.php', array_key_first( $all ), 'The freshly scanned plugin should sort before the seeded plugin.' );
+			$this->assertArrayHasKey( 'X-WP-Test-Extra', $all['extra-sort-first.php'], 'The freshly scanned plugin should contain the extra header.' );
+			$this->assertArrayHasKey( 'X-WP-Test-Extra', $all['custom-internationalized-plugin/custom-internationalized-plugin.php'], 'The row seeded from the folder cache should also gain the extra header.' );
 		} finally {
-			remove_filter( 'extra_plugin_headers', $callback );
 			unlink( $early[1] );
-			wp_clean_plugins_cache( false );
 		}
 	}
 
